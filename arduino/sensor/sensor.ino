@@ -4,43 +4,33 @@
 #include <Wire.h>
 #include <SPI.h>
 #include <SparkFunLSM9DS1.h>
+#include <NTPClient.h>
 #include <WiFi.h>
 
 
 // WiFi network name and password:
-const char * networkName = "Bobo hus";
-const char * networkPswd = "ilovebobo";
-const char * host = "192.168.86.33";
+const char * networkName = "Schloss Neidstein";
+const char * networkPswd = "cagerage";
+const char * host = "192.168.0.32";
 const uint16_t port = 1337;
 
 const int BUTTON_PIN = 0;
 const int LED_PIN = 5;
+const int CHUNK_SIZE = 100;
 
-float accelX[100];
-float accelY[100];
-float accelZ[100];
-
+float accelX[CHUNK_SIZE];
+float accelY[CHUNK_SIZE];
+float accelZ[CHUNK_SIZE];
+long long accelT[CHUNK_SIZE];
 int bufferPos = 0;
 
 LSM9DS1 imu;
-
-
-
-#define PRINT_CALCULATED
-#define PRINT_SPEED 250 // 250 ms between prints
-static unsigned long lastPrint = 0; // Keep track of print time
-
-// Earth's magnetic field varies by location. Add or subtract
-// a declination to get a more accurate heading. Calculate
-// your's here:
-// http://www.ngdc.noaa.gov/geomag-web/#declination
-#define DECLINATION -8.58 // Declination (degrees) in Boulder, CO.
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP);
+long long millisEpoch = 0;
 
 //Function definitions
-void printGyro();
 void printAccel();
-void printMag();
-void printAttitude(float ax, float ay, float az, float mx, float my, float mz);
 
 void connectToWiFi(const char * ssid, const char * pwd)
 {
@@ -48,7 +38,6 @@ void connectToWiFi(const char * ssid, const char * pwd)
 
   printLine();
   Serial.println("Connecting to WiFi network: " + String(ssid));
-
   WiFi.begin(ssid, pwd);
 
   while (WiFi.status() != WL_CONNECTED) 
@@ -81,14 +70,14 @@ void postData()
   Serial.println("Connected!");
   printLine();
 
-  char str[100];
-
+  char str[CHUNK_SIZE];
+  int contentLength = 46 * CHUNK_SIZE;
   // This will send the request to the server
   client.print((String)"POST /sensor HTTP/1.1\r\n" +
                "Host: " + String(host) + "\r\n" +
-               "Content-Length: 3300\r\n\r\n");
-  for (int i=0;i<100;i++) {
-    sprintf(str, "%f, %f, %f\n", accelX[i],accelY[i],accelZ[i]);
+               "Content-Length: " + contentLength + "\r\n\r\n");
+  for (int i=0;i<CHUNK_SIZE;i++) {
+    sprintf(str, "%f, %f, %f, %lli\n", accelX[i], accelY[i], accelZ[i], accelT[i]);
     client.print(str);
   }
   unsigned long timeout = millis();
@@ -121,6 +110,11 @@ void setup()
   Wire.begin();
   connectToWiFi(networkName, networkPswd);
 
+  timeClient.begin();
+  timeClient.update();
+  millisEpoch = (unsigned long long)timeClient.getEpochTime() * 1000;
+  
+
   if (imu.begin() == false) // with no arguments, this uses default addresses (AG:0x6B, M:0x1E) and i2c port (Wire).
   {
     Serial.println("Failed to communicate with LSM9DS1.");
@@ -144,58 +138,13 @@ void loop()
   accelX[bufferPos] = imu.calcAccel(imu.ax);
   accelY[bufferPos] = imu.calcAccel(imu.ay);
   accelZ[bufferPos] = imu.calcAccel(imu.az); 
+  accelT[bufferPos] = (unsigned long long)millisEpoch + millis();
   bufferPos++;
 
-  if (bufferPos == 100) {
+  if (bufferPos == CHUNK_SIZE) {
     postData();
     bufferPos = 0;
   }
-
-  
-  
-
-  if (false && (lastPrint + PRINT_SPEED) < millis())
-  {
-    printAccel(); // Print "A: ax, ay, az"
-    Serial.println();
-
-    lastPrint = millis(); // Update lastPrint time
-  }
-
-  if (digitalRead(BUTTON_PIN) == LOW)
-  { // Check if button has been pressed
-    while (digitalRead(BUTTON_PIN) == LOW)
-      ; // Wait for button to be released
-
-    digitalWrite(LED_PIN, HIGH); // Turn on LED
-    postData(); // Connect to server
-    digitalWrite(LED_PIN, LOW); // Turn off LED
-  }
-}
-
-void printAccel()
-{
-  // Now we can use the ax, ay, and az variables as we please.
-  // Either print them as raw ADC values, or calculated in g's.
-  Serial.print("A: ");
-#ifdef PRINT_CALCULATED
-  // If you want to print calculated values, you can use the
-  // calcAccel helper function to convert a raw ADC value to
-  // g's. Give the function the value that you want to convert.
-  Serial.print(imu.calcAccel(imu.ax), 2);
-  Serial.print(", ");
-  Serial.print(imu.calcAccel(imu.ay), 2);
-  Serial.print(", ");
-  Serial.print(imu.calcAccel(imu.az), 2);
-  Serial.println(" g");
-#elif defined PRINT_RAW
-  Serial.print(imu.ax);
-  Serial.print(", ");
-  Serial.print(imu.ay);
-  Serial.print(", ");
-  Serial.println(imu.az);
-#endif
-
 }
 
 void printLine()
