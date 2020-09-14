@@ -1,7 +1,14 @@
+require('dotenv').config()
+
 const app = require('express')()
 const bodyParser = require('body-parser')
-const Writable = require('stream').Writable
-const _ = require('highland')
+const db = require('./lib/db')
+const io = require('socket.io')
+
+const { SOCKET_PORT, EXPRESS_PORT } = process.env
+
+const socketServer = io.listen(SOCKET_PORT)
+app.listen(EXPRESS_PORT)
 
 app.use(bodyParser.raw())
 
@@ -15,7 +22,7 @@ app.post('/sensor', (req, res) => {
   req.on('data', (chunk) => {
     data += chunk
   })
-  req.on('end', () => {
+  req.on('end', async () => {
     const values = data
       .split('\n')
       .filter((val) => val)
@@ -25,12 +32,23 @@ app.post('/sensor', (req, res) => {
           x,
           y,
           z,
-          t,
+          t: new Date(t),
         }
       })
-    console.log(values, values.length)
+    await db.save(values)
+    sockets.forEach((socket) => {
+      socket.emit('sensor', values)
+    })
   })
   res.sendStatus(200)
 })
 
-app.listen(1337)
+let sockets = []
+socketServer.on('connection', (socket) => {
+  console.log('socket connected')
+  sockets.push(socket)
+
+  socket.on('disconnect', () => {
+    sockets = sockets.filter((s) => s === socket)
+  })
+})
