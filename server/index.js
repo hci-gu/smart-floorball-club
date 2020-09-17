@@ -18,10 +18,16 @@ app.get('/', (_, res) => {
 })
 
 app.post('/sensor', (req, res) => {
+  console.log('incoming data')
   let data = ''
   req.on('data', (chunk) => {
+    console.log('...')
     data += chunk
   })
+  req.on('error', (error) => {
+    console.log('error', error)
+  })
+  req.on('close', () => console.log('close'))
   req.on('end', async () => {
     const values = data
       .split('\n')
@@ -39,6 +45,7 @@ app.post('/sensor', (req, res) => {
     sockets.forEach((socket) => {
       socket.emit('sensor', values)
     })
+    console.log('data received and sent on sockets')
   })
   res.sendStatus(200)
 })
