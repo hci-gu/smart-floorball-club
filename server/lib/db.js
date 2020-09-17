@@ -7,8 +7,9 @@ const init = async () => {
   const client = await MongoClient.connect(CONNECT_TO, {})
   const db = client.db(DB_NAME)
   try {
-    sensorData = await db.createCollection('sensor-data')
-  } catch (e) {}
+    await db.createCollection('sensor-data')
+  } catch (e) { }
+  sensorData = db.collection('sensor-data')
 }
 
 init()
