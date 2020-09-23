@@ -8,7 +8,9 @@ const init = async () => {
   const db = client.db(DB_NAME)
   try {
     sensorData = await db.createCollection('sensor-data')
-  } catch (e) {}
+  } catch (e) {
+    sensorData = db.collection('sensor-data')
+  }
 }
 
 init()

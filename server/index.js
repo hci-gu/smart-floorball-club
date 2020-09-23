@@ -35,6 +35,7 @@ app.post('/sensor', (req, res) => {
           t: new Date(t),
         }
       })
+    console.log('got data', values.length)
     await db.save(values)
     sockets.forEach((socket) => {
       socket.emit('sensor', values)
