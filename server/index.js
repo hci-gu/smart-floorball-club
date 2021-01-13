@@ -1,28 +1,41 @@
 require('dotenv').config()
 
-const app = require('express')()
-const bodyParser = require('body-parser')
+const fs = require('fs')
+const http2 = require('http2')
 const db = require('./lib/db')
 const io = require('socket.io')
 
 const { SOCKET_PORT, EXPRESS_PORT } = process.env
 
 const socketServer = io.listen(SOCKET_PORT)
-app.listen(EXPRESS_PORT)
 
-app.use(bodyParser.raw())
+let sockets = []
+socketServer.on('connection', (socket) => {
+  console.log('socket connected')
+  sockets.push(socket)
 
-app.get('/', (_, res) => {
-  console.log('GET /')
-  res.send('OK')
+  socket.on('disconnect', () => {
+    sockets = sockets.filter((s) => s === socket)
+  })
 })
 
-app.post('/sensor', (req, res) => {
+const server = http2.createSecureServer({
+  key: fs.readFileSync('./keys/private.pem'),
+  cert: fs.readFileSync('./keys/cert.pem'),
+})
+
+server.on('stream', (stream) => {
+  console.log('stream', stream.id)
+  stream.respond({ ':status': 200 })
+
   let data = ''
-  req.on('data', (chunk) => {
+  stream.on('data', (chunk) => {
+    console.log('chunk', chunk)
     data += chunk
   })
-  req.on('end', async () => {
+  stream.on('end', () => {
+    console.log('Got request:', data)
+    stream.end()
     const values = data
       .split('\n')
       .filter((val) => val)
@@ -35,21 +48,11 @@ app.post('/sensor', (req, res) => {
           t: new Date(t),
         }
       })
-    console.log('got data', values.length)
-    await db.save(values)
     sockets.forEach((socket) => {
       socket.emit('sensor', values)
     })
   })
-  res.sendStatus(200)
+  stream.end('OK')
 })
 
-let sockets = []
-socketServer.on('connection', (socket) => {
-  console.log('socket connected')
-  sockets.push(socket)
-
-  socket.on('disconnect', () => {
-    sockets = sockets.filter((s) => s === socket)
-  })
-})
+server.listen(4000)
